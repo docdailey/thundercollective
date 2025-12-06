@@ -1,11 +1,16 @@
 [package]
 name = "thundercollective"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Ultrafast 2-node collectives for M3 Ultra + Thunderbolt 5 RDMA"
 license = "Apache-2.0"
 
+[features]
+default = []
+rdma = []  # Will add async-rdma when we build the backend
+
 [dependencies]
 anyhow = "1.0"
+async-trait = "0.1"
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.38", features = ["full"] }
