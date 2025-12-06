@@ -86,6 +86,26 @@ Swap `TcpFabric` for `RdmaFabric` — same API, 2x+ bandwidth.
 - [ ] v0.4.0 – Candle integration (34B QLoRA, 70B sharded inference)
 - [ ] v0.5.0 – Multi-link TB5 bonding (25+ GB/s)
 
+## Design Notes
+
+**Why 2-node?**
+Two M3 Ultra Mac Studios with 512GB unified memory each = 1TB total. That's enough to fine-tune 405B models or run 1T+ MoE inference. More nodes add complexity without proportional benefit at this scale.
+
+**Why Thunderbolt 5?**
+TB5 gives 80 Gbps (10 GB/s theoretical) with PCIe tunneling. Unlike USB4/TB4, it can actually saturate a ConnectX-6 NIC. No enterprise switches, no rack, no electrician.
+
+**Why RDMA over IP bonding?**
+RDMA (via ibverbs) bypasses the kernel network stack entirely. Zero-copy, kernel-bypass, hardware offload. IP bonding caps at ~3 GB/s with CPU overhead; RDMA hits 7+ GB/s with negligible CPU.
+
+**Why not just use NCCL?**
+NCCL assumes NVIDIA GPUs with NVLink/InfiniBand. Apple Silicon has neither. We need a from-scratch collective that speaks Metal + RDMA.
+
+## Hardware Bring-up
+
+Wiring TB5 + ConnectX-6 for the first time? See [HARDWARE_BRINGUP.md](./HARDWARE_BRINGUP.md) for the step-by-step checklist.
+
+**Do not write RDMA code until `ib_write_bw` shows 7+ GB/s.**
+
 ## License
 
 Apache-2.0 — fork it, ship it, make the world faster.

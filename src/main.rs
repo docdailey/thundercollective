@@ -22,6 +22,50 @@ struct Args {
     size: usize,
     #[arg(long, default_value_t = 1000)]
     iters: u32,
+    /// Output results as JSON (for scripting/dashboards)
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug)]
+struct BenchResult {
+    mode: String,
+    rank: usize,
+    size_bytes: usize,
+    iters: u32,
+    elapsed_secs: f64,
+    gbps: f64,
+    final_value: Option<u8>,
+}
+
+impl BenchResult {
+    fn print(&self, json: bool) {
+        if json {
+            println!(
+                r#"{{"mode":"{}","rank":{},"size_bytes":{},"iters":{},"elapsed_secs":{:.4},"gbps":{:.2}{}}}"#,
+                self.mode,
+                self.rank,
+                self.size_bytes,
+                self.iters,
+                self.elapsed_secs,
+                self.gbps,
+                self.final_value
+                    .map(|v| format!(r#","final_value":{}"#, v))
+                    .unwrap_or_default()
+            );
+        } else {
+            match &self.final_value {
+                Some(v) => println!(
+                    "rank {} {} {} bytes x {} iters -> {:.2} GB/s, final[0] = {}",
+                    self.rank, self.mode, self.size_bytes, self.iters, self.gbps, v
+                ),
+                None => println!(
+                    "{} {} bytes x {} iters -> {:.2} GB/s",
+                    self.mode, self.size_bytes, self.iters, self.gbps
+                ),
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -53,16 +97,25 @@ async fn run_ping_pong<F: Fabric>(fabric: &F, args: &Args) -> Result<()> {
         }
         let elapsed = start.elapsed().as_secs_f64();
         let gbps = (args.size as f64 * args.iters as f64 * 2.0 / elapsed) / 1e9;
-        println!(
-            "Ping-pong {} bytes x {} iters -> {:.2} GB/s",
-            args.size, args.iters, gbps
-        );
+
+        BenchResult {
+            mode: "ping-pong".to_string(),
+            rank: fabric.rank(),
+            size_bytes: args.size,
+            iters: args.iters,
+            elapsed_secs: elapsed,
+            gbps,
+            final_value: None,
+        }
+        .print(args.json);
     } else {
         for _ in 0..args.iters {
             fabric.recv(peer, &mut buf).await?;
             fabric.send(peer, &buf).await?;
         }
-        println!("rank {} ping-pong complete", fabric.rank());
+        if !args.json {
+            println!("rank {} ping-pong complete", fabric.rank());
+        }
     }
 
     Ok(())
@@ -76,16 +129,18 @@ async fn run_allreduce<F: Fabric>(fabric: &F, args: &Args) -> Result<()> {
         fabric.allreduce(&mut buf, ReduceOp::Sum).await?;
     }
     let elapsed = start.elapsed().as_secs_f64();
-
     let gbps = (args.size as f64 * args.iters as f64 * 2.0 / elapsed) / 1e9;
-    println!(
-        "rank {} allreduce {} bytes x {} iters -> {:.2} GB/s, final[0] = {}",
-        fabric.rank(),
-        args.size,
-        args.iters,
+
+    BenchResult {
+        mode: "allreduce".to_string(),
+        rank: fabric.rank(),
+        size_bytes: args.size,
+        iters: args.iters,
+        elapsed_secs: elapsed,
         gbps,
-        buf[0]
-    );
+        final_value: Some(buf[0]),
+    }
+    .print(args.json);
 
     Ok(())
 }
