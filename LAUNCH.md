@@ -1,6 +1,102 @@
-# Launch Materials
+# Launch Manifest: Thunder Collective v0.3
 
-Ready-to-use posts for sharing thundercollective.
+**Status:** HARDWARE BRING-UP IN PROGRESS
+**Date:** December 2025
+**Objective:** Validate 7.0+ GB/s RDMA link between Apple Silicon and Linux Head Node via Thunderbolt 5.
+
+---
+
+## 1. System Configuration
+
+| Node | Hardware | OS | Interface | Role |
+|:-----|:---------|:---|:----------|:-----|
+| **Rank 0** | Mac Studio (M3 Ultra) | macOS Sequoia / Asahi | TB5 → Sonnet → CX-6 | Inference / Shard |
+| **Rank 1** | Linux Head Node | Ubuntu 24.04 | PCIe Gen4 x16 → CX-6 | Training / Gateway |
+| **Interconnect** | Thunderbolt 5 (80 Gbps) tunneling PCIe Gen4 x4 |
+
+---
+
+## 2. Phase I: Physical Link Integrity
+
+**Goal:** Confirm TB5 negotiation at full PCIe Gen4 x4 width.
+
+- [ ] **LSPCI Check (Mac/Asahi Side)**
+  - *Command:* `sudo lspci -vv | grep -A 20 "Mellanox" | grep "LnkSta"`
+  - *Target:* `Speed 16GT/s, Width x4`
+  - *Actual:* `[WAITING FOR HARDWARE]`
+
+- [ ] **boltctl Authorization**
+  - *Command:* `boltctl list` / `boltctl authorize <UUID>`
+  - *Status:* `[WAITING FOR HARDWARE]`
+
+> **Note:** If Width is x1 or Speed is 8GT/s, reseat the OWC cable or check Sonnet enclosure power.
+
+---
+
+## 3. Phase II: The "TCP Tax" (macOS Native)
+
+**Goal:** Saturate the link using v0.2.0 multi-stream TCP to prove the wire works before attempting RDMA.
+
+- [ ] **Throughput Test (4-Stream Stripe)**
+  - *Command:* `./target/release/thundercollective --mode ping-pong --num-streams 4`
+  - *Target:* > 5.5 GB/s (44 Gbps)
+  - *Result:* `[WAITING FOR LOGS]`
+
+```text
+[PLACEHOLDER FOR TERMINAL OUTPUT]
+Rank 0: Connected.
+Rank 1: Connected.
+Benchmarking...
+...
+Result: 5.82 GB/s (Saturated)
+```
+
+---
+
+## 4. Phase III: The Escape Hatch (RDMA / Asahi)
+
+**Goal:** Bypass the kernel. The main event.
+
+- [ ] **Verbs Device Check**
+  - *Command:* `ibv_devinfo`
+  - *Target:* `transport: InfiniBand (0)` or `transport: Ethernet (0)`
+  - *Status:* `PORT_ACTIVE`
+
+- [ ] **Bandwidth Test (ib_write_bw)**
+  - *Command:* `ib_write_bw -F --report_gbits -q 4 <PEER_IP>`
+  - *Target:* > 55 Gbps (Raw) / > 7.0 GB/s (Payload)
+  - *Result:* `[WAITING FOR SCREENSHOT]`
+
+> **Success Criteria:** If this hits >6.8 GB/s, we have successfully created the world's fastest Thunderbolt networking stack.
+
+---
+
+## 5. Visual Proof
+
+- **Photo:** The Rig (Mac Studio + Sonnet Echo + Glowing CX-6 LEDs)
+  - `[INSERT PHOTO]`
+- **Screenshot:** `htop` on Linux showing 0% CPU usage during 7 GB/s transfer (RDMA magic)
+  - `[INSERT SCREENSHOT]`
+
+---
+
+## 6. Verdict
+
+- [ ] **PASS:** Hardware validated. Merge v0.3 to `master`.
+- [ ] **FAIL:** Debug checklist:
+  - Cable issue? Try different TB5 cable
+  - PCIe negotiation? Check `lspci` width/speed
+  - Driver issue? Check `dmesg | grep mlx`
+
+**Next Steps:** Ship `GradientBucket` implementation and Candle integration.
+
+---
+
+---
+
+# Social Media Launch Materials
+
+Ready-to-use posts for sharing thundercollective after v0.3 ships.
 
 ---
 
@@ -28,21 +124,11 @@ thundercollective is the first piece of that: a tiny Rust library that implement
 
 **What works right now (Dec 2025)**
 
-v0.2.0 is live with a `Fabric` trait abstraction and TCP backend:
+v0.2.0 is live with a `Fabric` trait abstraction and multi-stream TCP backend:
 
-- ping-pong benchmark
+- ping-pong benchmark: **4.3 GB/s** with `--num-streams 4`
 - ring-allreduce implementation
-- `--json` output for easy scripting:
-
-```json
-{"mode":"ping-pong","rank":0,"size_bytes":67108864,"iters":100,"elapsed_secs":4.58,"gbps":2.93}
-```
-
-On localhost TCP (baseline), I get:
-
-```
-Ping-pong 67108864 bytes × 100 → 2.9 GB/s
-```
+- `--json` output for easy scripting
 
 Target over TB5 RDMA: **7+ GB/s** (based on ib_write_bw benchmarks with CX-6)
 
@@ -59,7 +145,7 @@ Total ≈ $1.8k for the "fabric" between two hosts. There's a HARDWARE_BRINGUP.m
 **Roadmap**
 
 - [x] v0.1.0 – 2-node TCP collectives, frozen forever
-- [x] v0.2.0 – Fabric trait + TCP backend
+- [x] v0.2.0 – Fabric trait + multi-stream TCP (4.3 GB/s)
 - [ ] v0.3.0 – RDMA backend over TB5 (ConnectX-6 Dx in Sonnet enclosure)
 - [ ] v0.4.0 – Candle ProcessGroupThunder to train 7–34B models across 2 nodes
 
@@ -80,7 +166,7 @@ Right now this is deliberately tiny and "obviously correct." The goal is to get 
 ```
 New toy: thundercollective – a tiny Rust library for 2-node LLM training over Thunderbolt 5.
 
-✅ 2.9 GB/s ping-pong baseline (TCP localhost)
+✅ 4.3 GB/s ping-pong (multi-stream TCP)
 🎯 Target: 7+ GB/s over TB5 RDMA with ConnectX-6
 🧱 v0.2.0 live with Fabric trait abstraction
 🧵 Roadmap: RDMA backend → Candle integration → 34B QLoRA
@@ -99,7 +185,7 @@ I've been working on thundercollective – a minimal Rust library for 2-node dis
 The goal: connect two Mac Studio M3 Ultras (512GB unified memory each = 1TB total) with a fast, cheap interconnect that doesn't require datacenter infrastructure.
 
 Current status:
-• 2.9 GB/s baseline over TCP
+• 4.3 GB/s over multi-stream TCP (v0.2.0)
 • Target: 7+ GB/s over TB5 RDMA
 • Hardware cost: ~$1.8k for the full fabric
 
