@@ -18,7 +18,7 @@ Real-world target: **7.0 – 7.4 GB/s** per TB5 link, **400 Gbit/s** on datacent
 | Version | Status | What it does |
 |--------|--------|--------------|
 | `v0.1.0` | Frozen forever | Pure TCP 2-node ping-pong + ring-allreduce. Localhost baseline: ~3 GB/s |
-| `v0.2.0` | **Current** | `Fabric` trait + `src/fabric/tcp.rs` |
+| `v0.2.0` | **Current** | `Fabric` trait + multi-stream TCP striping (4.3 GB/s with `--num-streams 4`) |
 | `v0.3.0` | Next | RDMA backend (`async-rdma` or raw `ibverbs`) + `GradientBucket` |
 | `v0.4.0` | Future | Candle `ProcessGroupThunder` integration |
 
@@ -29,19 +29,31 @@ git clone https://github.com/docdailey/thundercollective
 cd thundercollective
 cargo build --release
 
-# Terminal 1
+# Terminal 1 (use --num-streams 4 for higher throughput)
 ./target/release/thundercollective --rank 0 --world-size 2 \
-  --addr 127.0.0.1:5000 --addr 127.0.0.1:5001 --mode ping-pong
+  --addr 127.0.0.1:5000 --addr 127.0.0.1:5010 --mode ping-pong --num-streams 4
 
 # Terminal 2
 ./target/release/thundercollective --rank 1 --world-size 2 \
-  --addr 127.0.0.1:5000 --addr 127.0.0.1:5001 --mode ping-pong
+  --addr 127.0.0.1:5000 --addr 127.0.0.1:5010 --mode ping-pong --num-streams 4
 ```
+
+Note: With `--num-streams N`, rank 0 listens on ports 5000, 5001, ..., 5000+N-1. Leave a gap between rank addresses (e.g., 5000 and 5010) to avoid port collisions.
 
 ## Modes
 
-- `ping-pong` - Bidirectional bandwidth test (~3 GB/s TCP localhost)
-- `allreduce` - In-place sum reduction across ranks (~1.2 GB/s TCP localhost)
+- `ping-pong` - Bidirectional bandwidth test
+- `allreduce` - In-place sum reduction across ranks
+
+## Benchmarks (localhost, 64 MB × 50 iters)
+
+| Mode | Streams | Throughput |
+|------|---------|------------|
+| ping-pong | 1 | 2.8 GB/s |
+| ping-pong | 4 | **4.3 GB/s** |
+| allreduce | 4 | 1.8 GB/s |
+
+On CX-6 Ethernet mode (TB5), expect **5.5–6 GB/s**. Full RDMA (v0.3.0) targets **7+ GB/s**.
 
 ## Hardware BOM – "7 GB/s kit" (Dec 2025 prices)
 
@@ -83,7 +95,7 @@ Swap `TcpFabric` for `RdmaFabric` — same API, 2x+ bandwidth.
 ## Roadmap
 
 - [x] v0.1.0 – TCP baseline (frozen)
-- [x] v0.2.0 – `Fabric` trait abstraction
+- [x] v0.2.0 – `Fabric` trait abstraction + multi-stream TCP striping
 - [ ] v0.3.0 – RDMA backend + `GradientBucket<F: Fabric>` for batched all-reduce
 - [ ] v0.4.0 – Candle integration (34B QLoRA, 70B sharded inference)
 - [ ] v0.5.0 – Multi-link TB5 bonding (25+ GB/s)
