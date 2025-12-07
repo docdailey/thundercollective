@@ -13,4 +13,5 @@ rdma = []  # Will add async-rdma when we build the backend
 anyhow = "1.0"
 async-trait = "0.1"
 clap = { version = "4.5", features = ["derive"] }
+futures = "0.3"
 tokio = { version = "1.38", features = ["full"] }

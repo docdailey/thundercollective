@@ -22,6 +22,9 @@ struct Args {
     size: usize,
     #[arg(long, default_value_t = 1000)]
     iters: u32,
+    /// Number of parallel TCP streams for striped I/O (default 1, try 4 for higher throughput)
+    #[arg(long, default_value_t = 1)]
+    num_streams: usize,
     /// Output results as JSON (for scripting/dashboards)
     #[arg(long, default_value_t = false)]
     json: bool,
@@ -73,7 +76,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Create fabric - swap TcpFabric for RdmaFabric when hardware arrives
-    let fabric = TcpFabric::new(args.rank, args.world_size, &args.addr).await?;
+    let fabric = TcpFabric::new(args.rank, args.world_size, &args.addr, args.num_streams).await?;
 
     match args.mode.as_str() {
         "ping-pong" => run_ping_pong(&fabric, &args).await?,
