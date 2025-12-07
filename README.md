@@ -1,15 +1,17 @@
 # thundercollective
 
-**Ultrafast 2-node collectives for M3 Ultra + Thunderbolt 5 RDMA**
-The fastest consumer-grade AI training fabric on earth in 2025.
+**Universal high-speed fabric for heterogeneous AI clusters**
+
+A tiny Rust library that turns any RDMA-capable hardware into a unified training fabric. Started as "poor man's NVLink" for two Mac Studios, evolved into a hardware-agnostic collective that works across Apple Silicon, AMD, NVIDIA, and x86.
 
 ```
-Mac Studio #1 (M3 Ultra 512 GB) ←TB5→ Sonnet Echo SE I T5 + ConnectX-6 Dx ←→ Linux head node
-Mac Studio #2 (M3 Ultra 512 GB) ←TB5→ Sonnet Echo SE I T5 + ConnectX-6 Dx ←→ Linux head node
+Mac Studio (M3 Ultra 512 GB) ←TB5→ Sonnet + CX-6 ←→ Linux head node
+Framework 16 (AMD)           ←TB5→ Sonnet + CX-6 ←───┘
+MI300X server                ←PCIe→ CX-7 400GbE  ←───┘
 ```
 
-Real-world target: **7.0 – 7.4 GB/s bidirectional all-reduce** over a single TB5 link
-→ < 8 % comms overhead on 34B QLoRA, < 4 % on 70B sharded inference
+Real-world target: **7.0 – 7.4 GB/s** per TB5 link, **400 Gbit/s** on datacenter NICs
+→ Same `Fabric` trait, same training code, any hardware
 
 ## Current status (December 2025)
 
@@ -99,6 +101,33 @@ RDMA (via ibverbs) bypasses the kernel network stack entirely. Zero-copy, kernel
 
 **Why not just use NCCL?**
 NCCL assumes NVIDIA GPUs with NVLink/InfiniBand. Apple Silicon has neither. We need a from-scratch collective that speaks Metal + RDMA.
+
+## Supported Hardware
+
+The `Fabric` trait is hardware-agnostic. Any machine with an RDMA-capable NIC can join:
+
+| Machine | Connection | Expected Bandwidth |
+|---------|------------|-------------------|
+| Mac Studio / MacBook Pro (M3/M4 Ultra) | TB5 → Sonnet + CX-6 → Linux | 7.0 – 7.4 GB/s |
+| Mac mini (M4 Pro) | TB5 → Sonnet + CX-6 → Linux | 7+ GB/s |
+| Framework Laptop 16 (AMD) | TB5 → Sonnet + CX-6 or direct PCIe | 7+ GB/s |
+| Any x86 Linux desktop/server | Direct PCIe slot + CX-6/7 | 7 – 200+ GB/s |
+| AMD MI300X / MI325X | Native 400 Gbit RoCEv2 | 400 Gbit/s |
+| NVIDIA Grace Hopper | NVLink + CX-7 | 900 GB/s NVLink domain |
+
+**Mix and match.** Apple for inference, AMD for training, NVIDIA for whatever—all on the same fabric:
+
+```rust
+// This runs on ANY of the above machines
+let fabric: Box<dyn Fabric> = match backend {
+    "tcp"  => Box::new(TcpFabric::new(...).await?),
+    "rdma" => Box::new(RdmaFabric::new(...).await?),
+};
+
+fabric.allreduce(&mut gradients, ReduceOp::Sum).await?;
+```
+
+Same training loop. Same `GradientBucket`. Different metal.
 
 ## Hardware Bring-up
 
